@@ -1,0 +1,56 @@
+# ---------------------------------------------------------------------------
+# Secrets — never commit these. AutoPress keys live in autopress/.env,
+# MoneyPrinterTurbo's Pexels key lives in MoneyPrinterTurbo/config.toml.
+# On Railway both are supplied as environment variables instead.
+# ---------------------------------------------------------------------------
+.env
+.env.local
+.env*.local
+!.env.example
+MoneyPrinterTurbo/config.toml
+MoneyPrinterTurbo/config.toml.bak
+
+# ---------------------------------------------------------------------------
+# Build output and dependencies
+# ---------------------------------------------------------------------------
+node_modules/
+.next/
+out/
+build/
+dist/
+coverage/
+next-env.d.ts
+tsconfig.tsbuildinfo
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# ---------------------------------------------------------------------------
+# Runtime data — regenerated, and large
+# ---------------------------------------------------------------------------
+MoneyPrinterTurbo/storage/
+MoneyPrinterTurbo/_diag/
+MoneyPrinterTurbo/models/
+autopress/prisma/*.db
+*.log
+npm-debug.log*
+dump.rdb
+
+# ---------------------------------------------------------------------------
+# MoneyPrinterTurbo's bundled CJK fonts: 141 MB across four .ttc files, two of
+# them 53 MB each, which is past GitHub's warning threshold. AutoPress renders
+# with BeVietnamPro-Bold.ttf (a .ttf, kept), so these are dead weight here.
+# Need Chinese/Japanese narration later? Drop them back in on the server, or
+# delete this rule and re-commit.
+# ---------------------------------------------------------------------------
+MoneyPrinterTurbo/resource/fonts/*.ttc
+
+# ---------------------------------------------------------------------------
+# Scratch
+# ---------------------------------------------------------------------------
+_attic/
+.to-delete/
+.DS_Store
+__MACOSX/
+*.bak

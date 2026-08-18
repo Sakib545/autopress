@@ -1,0 +1,15 @@
+node_modules
+.next
+.git
+.env
+.env.*
+!.env.example
+_diag
+.to-delete
+*.log
+npm-debug.log*
+.DS_Store
+coverage
+test
+docs
+scripts/*.bak

@@ -1,0 +1,127 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif;
+  /* Page background gets a faint tint so white cards read as raised surfaces. */
+  --page-bg: #fbfcfd;
+  --page-glow: radial-gradient(80rem 40rem at 50% -12rem, rgb(51 132 251 / 0.07), transparent 60%);
+}
+.dark {
+  --page-bg: #0b0d12;
+  --page-glow: radial-gradient(80rem 40rem at 50% -12rem, rgb(51 132 251 / 0.12), transparent 60%);
+}
+
+@layer base {
+  html { -webkit-text-size-adjust: 100%; }
+  @media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+  body {
+    @apply text-ink-900 antialiased dark:text-ink-100;
+    background-color: var(--page-bg);
+    background-image: var(--page-glow);
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+    font-family: var(--font-sans);
+    text-rendering: optimizeLegibility;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'ss01';
+  }
+  h1, h2, h3, h4 { @apply font-serif tracking-tight; }
+  h1 { @apply text-balance; }
+  ::selection { @apply bg-accent-200 text-ink-900; }
+  .dark ::selection { @apply bg-accent-800 text-ink-100; }
+  :focus-visible { @apply outline-none ring-2 ring-accent-500/70 ring-offset-2; --tw-ring-offset-color: var(--page-bg); }
+  /* Nothing on the site may overflow the viewport on small screens. */
+  img, video, table { max-width: 100%; }
+  code { font-variant-ligatures: none; }
+}
+
+@layer components {
+  .container-page { @apply mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8; }
+  .rule { @apply border-ink-200/80 dark:border-ink-800/80; }
+
+  /* ---- Surfaces -------------------------------------------------------- */
+  .card {
+    @apply rounded-xl border border-ink-200/80 bg-white shadow-card
+           dark:border-ink-800/80 dark:bg-ink-900/60 dark:shadow-none dark:backdrop-blur-sm;
+  }
+  /* Interactive cards lift slightly and warm their border on hover. */
+  .card-interactive {
+    @apply card transition-all duration-200 ease-swift
+           hover:-translate-y-0.5 hover:border-accent-300 hover:shadow-lift
+           dark:hover:border-accent-700/70;
+  }
+  .panel { @apply rounded-xl bg-ink-50/70 p-4 dark:bg-ink-900/40; }
+  .divide-rule { @apply divide-y divide-ink-200/70 dark:divide-ink-800/70; }
+
+  /* ---- Buttons --------------------------------------------------------- */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium
+           transition-all duration-150 ease-swift active:scale-[0.98]
+           disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn bg-accent-600 text-white shadow-card
+           hover:bg-accent-700 hover:shadow-lift
+           dark:bg-accent-500 dark:hover:bg-accent-400 dark:hover:text-ink-950;
+  }
+  .btn-secondary {
+    @apply btn border border-ink-200 bg-white text-ink-700 shadow-card
+           hover:border-ink-300 hover:bg-ink-50 hover:text-ink-900
+           dark:border-ink-700 dark:bg-ink-900 dark:text-ink-200 dark:shadow-none
+           dark:hover:border-ink-600 dark:hover:bg-ink-800 dark:hover:text-ink-50;
+  }
+  .btn-danger {
+    @apply btn border border-red-200 bg-white text-red-700 shadow-card
+           hover:border-red-300 hover:bg-red-50
+           dark:border-red-900/70 dark:bg-transparent dark:text-red-400 dark:shadow-none dark:hover:bg-red-950/40;
+  }
+  .btn-ghost {
+    @apply btn text-ink-600 hover:bg-ink-100 hover:text-ink-900
+           dark:text-ink-400 dark:hover:bg-ink-800 dark:hover:text-ink-100;
+  }
+
+  /* ---- Forms ----------------------------------------------------------- */
+  .input {
+    @apply w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 shadow-card
+           transition-colors placeholder:text-ink-400
+           focus:border-accent-500 focus:ring-4 focus:ring-accent-500/15
+           dark:border-ink-700 dark:bg-ink-900 dark:text-ink-100 dark:shadow-none;
+  }
+  .label { @apply mb-1.5 block text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400; }
+
+  /* ---- Bits ------------------------------------------------------------ */
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium
+           ring-1 ring-inset ring-black/[0.04] dark:ring-white/[0.06];
+  }
+  .eyebrow { @apply text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-500; }
+  .link-accent {
+    @apply text-accent-700 underline-offset-4 transition-colors hover:text-accent-800 hover:underline
+           dark:text-accent-400 dark:hover:text-accent-300;
+  }
+  /* Section divider with a label sitting on the rule. */
+  .section-head { @apply flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b rule pb-2; }
+  .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .skeleton {
+    @apply rounded-md bg-ink-100 dark:bg-ink-800;
+    background-image: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.45), transparent);
+    background-size: 200% 100%;
+    @apply animate-shimmer;
+  }
+}
+
+/* Article body typography. Tables scroll horizontally instead of breaking layout. */
+.article-body { @apply prose prose-lg max-w-none dark:prose-invert prose-headings:font-serif prose-a:text-accent-700 dark:prose-a:text-accent-400; }
+.article-body table { @apply block w-full overflow-x-auto whitespace-nowrap text-sm sm:table sm:whitespace-normal; }
+.article-body h2 { @apply mt-12 scroll-mt-24 text-3xl; }
+.article-body h3 { @apply mt-8 scroll-mt-24 text-xl; }
+.article-body a[data-internal='true'] { @apply decoration-accent-300 underline-offset-2; }
+.article-body blockquote {
+  @apply rounded-r-lg border-l-2 border-accent-400 bg-accent-50/60 py-1 not-italic dark:bg-accent-950/25;
+}
+.article-body blockquote p::before, .article-body blockquote p::after { content: none; }
+.article-body img { @apply rounded-xl shadow-card; }
+.article-body figcaption { @apply text-center text-sm text-ink-500; }
