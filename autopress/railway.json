@@ -5,7 +5,7 @@
     "dockerfilePath": "Dockerfile"
   },
   "deploy": {
-    "startCommand": "npx prisma migrate deploy && npm run start",
+    "startCommand": "timeout 180 npx prisma migrate deploy; echo \"[boot] migrate exit=$?\"; exec npm run start",
     "healthcheckPath": "/api/health",
     "healthcheckTimeout": 300,
     "restartPolicyType": "ON_FAILURE",
