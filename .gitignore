@@ -54,3 +54,7 @@ _attic/
 .DS_Store
 __MACOSX/
 *.bak
+
+# Local archives and scratch — not part of the repository
+autopress-stack.zip
+*.zip

@@ -1,0 +1,3 @@
+robots.txt and sitemap.xml are generated dynamically by the application at
+/robots.txt and /sitemap.xml (src/app/robots.ts and src/app/sitemap.ts).
+Do not add static versions here — they would shadow the generated routes.

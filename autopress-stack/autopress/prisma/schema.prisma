@@ -1,0 +1,1022 @@
+// ---------------------------------------------------------------------------
+// Automated Content Publishing Platform — Prisma schema
+// Postgres. No extensions required: dedupe uses a unique index for exact matches,
+// then trigram + cosine similarity computed in JS over a bounded candidate set.
+// This keeps the app portable across Railway, Supabase, Neon and local Postgres.
+// ---------------------------------------------------------------------------
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ===========================================================================
+// ENUMS
+// ===========================================================================
+
+enum Role {
+  ADMIN
+  EDITOR
+  AUTHOR
+  VIEWER
+}
+
+enum TopicStatus {
+  NEW
+  APPROVED
+  DUPLICATE
+  REJECTED
+  QUEUED
+  WRITING
+  PUBLISHED
+}
+
+enum ArticleStatus {
+  RESEARCHING
+  DRAFTING
+  REVIEWING
+  REWRITING
+  MANUAL_REVIEW
+  READY
+  SCHEDULED
+  PUBLISHED
+  FAILED
+  ARCHIVED
+}
+
+enum SearchIntent {
+  INFORMATIONAL
+  COMMERCIAL
+  TRANSACTIONAL
+  NAVIGATIONAL
+  COMPARISON
+  TUTORIAL
+  NEWS
+}
+
+enum ContentType {
+  STANDARD
+  HOW_TO
+  COMPARISON
+  BEST_OF
+  ALTERNATIVES
+  REVIEW
+  TUTORIAL
+  EXPLAINER
+  GLOSSARY
+  NEWS
+  RESOURCE
+}
+
+enum KeywordRole {
+  PRIMARY
+  SECONDARY
+  LONG_TAIL
+}
+
+enum AiTask {
+  TOPIC_DISCOVERY
+  TOPIC_SCORING
+  EMBEDDING
+  RESEARCH_SYNTHESIS
+  FACT_CHECK
+  ARTICLE_WRITING
+  ARTICLE_REWRITE
+  QUALITY_REVIEW
+  SEO_METADATA
+  INTERNAL_LINKING
+  IMAGE_PROMPT
+  IMAGE_GENERATION
+  REFRESH_DIFF
+  VIDEO_SCRIPT
+}
+
+enum JobType {
+  TOPIC_DISCOVER
+  TOPIC_DEDUPE
+  TOPIC_SCORE
+  RESEARCH_BUILD
+  ARTICLE_DRAFT
+  ARTICLE_REVIEW
+  ARTICLE_REWRITE
+  ARTICLE_SEO
+  ARTICLE_LINK
+  ARTICLE_IMAGE
+  PUBLISH_RUN
+  REFRESH_SCAN
+  REFRESH_UPDATE
+  LINK_CHECK
+  METRICS_SYNC
+  SITEMAP_REFRESH
+  DB_MAINTENANCE
+  VIDEO_GENERATE
+  VIDEO_POLL
+}
+
+enum JobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+  SKIPPED
+}
+
+enum LinkStatus {
+  UNCHECKED
+  WORKING
+  REDIRECTED
+  BROKEN
+  REPLACED
+  REMOVED
+}
+
+enum MediaSource {
+  AI_GENERATED
+  STOCK_API
+  UPLOAD
+  FALLBACK
+}
+
+enum RevisionReason {
+  INITIAL
+  QUALITY_REWRITE
+  FRESHNESS_UPDATE
+  FACT_CORRECTION
+  BROKEN_LINK_FIX
+  PERFORMANCE_OPTIMIZATION
+  MANUAL_EDIT
+}
+
+enum FreshnessTier {
+  VOLATILE // pricing, product lineups — check often
+  STANDARD // most articles
+  EVERGREEN // tutorials, definitions — rarely
+  DATED // news — record, do not endlessly rewrite
+}
+
+enum VideoStatus {
+  QUEUED
+  SCRIPTING
+  GENERATING
+  COMPLETED
+  FAILED
+  PUBLISHED
+}
+
+enum AdPlacement {
+  BELOW_INTRO
+  MID_ARTICLE
+  END_ARTICLE
+  SIDEBAR
+  HOMEPAGE_INLINE
+}
+
+enum SponsorshipType {
+  NONE
+  SPONSORED
+  PAID_PARTNERSHIP
+  ADVERTISEMENT
+}
+
+enum NotificationLevel {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+}
+
+enum SettingType {
+  STRING
+  NUMBER
+  BOOLEAN
+  JSON
+}
+
+enum FactVerdict {
+  VERIFIED
+  UNVERIFIED
+  CONFLICTING
+  OUTDATED
+  REMOVED
+}
+
+// ===========================================================================
+// AUTH (Auth.js / NextAuth Prisma adapter)
+// ===========================================================================
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  passwordHash  String?
+  role          Role      @default(VIEWER)
+  isActive      Boolean   @default(true)
+  lastLoginAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts      Account[]
+  sessions      Session[]
+  authorProfile Author?
+  revisions     ArticleRevision[]
+  notifications Notification[]
+
+  @@index([role])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ===========================================================================
+// EDITORIAL IDENTITY
+// ===========================================================================
+
+model Author {
+  id          String   @id @default(cuid())
+  userId      String?  @unique
+  name        String
+  slug        String   @unique
+  bio         String?  @db.Text
+  imageUrl    String?
+  expertise   String[] @default([])
+  socialLinks Json? // { twitter, linkedin, website, ... }
+  // Transparency: false means the byline is an editorial identity for AI-assisted
+  // output. Templates must not emit first-person testing claims when false.
+  isHuman     Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user     User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  articles Article[]
+
+  @@index([isActive])
+}
+
+// ===========================================================================
+// TAXONOMY
+// ===========================================================================
+
+model Category {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?  @db.Text
+  parentId    String?
+  imageUrl    String?
+  seoTitle    String?
+  seoDesc     String?
+  isIndexable Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  parent   Category?        @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children Category[]       @relation("CategoryTree")
+  articles Article[]
+  topics   Topic[]
+  clusters ContentCluster[]
+
+  @@index([parentId])
+  @@index([slug])
+}
+
+model Tag {
+  id           String   @id @default(cuid())
+  name         String
+  slug         String   @unique
+  description  String?  @db.Text
+  articleCount Int      @default(0)
+  // Thin tag pages stay out of the sitemap until they clear the admin threshold.
+  isIndexable  Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  articles ArticleTag[]
+
+  @@index([isIndexable])
+}
+
+model ArticleTag {
+  articleId String
+  tagId     String
+  createdAt DateTime @default(now())
+
+  article Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  tag     Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([articleId, tagId])
+  @@index([tagId])
+}
+
+model ContentCluster {
+  id              String   @id @default(cuid())
+  name            String
+  slug            String   @unique
+  description     String?  @db.Text
+  categoryId      String?
+  pillarArticleId String?  @unique
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  category      Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  pillarArticle Article?  @relation("ClusterPillar", fields: [pillarArticleId], references: [id], onDelete: SetNull)
+  articles      Article[] @relation("ClusterMembers")
+  topics        Topic[]
+
+  @@index([categoryId])
+}
+
+// ===========================================================================
+// KEYWORDS & TOPICS
+// ===========================================================================
+
+model Keyword {
+  id              String        @id @default(cuid())
+  term            String
+  normalizedTerm  String        @unique
+  intent          SearchIntent?
+  // 0-100 heuristic scores; refined once Search Console data is connected.
+  commercialScore Int           @default(0)
+  difficulty      Int           @default(0)
+  searchVolume    Int?
+  source          String? // discovery origin: category | trend | serp | manual
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  articles ArticleKeyword[]
+  topics   TopicKeyword[]
+
+  @@index([intent])
+  @@index([commercialScore])
+}
+
+model Topic {
+  id              String       @id @default(cuid())
+  title           String
+  normalizedTitle String       @unique
+  angle           String?      @db.Text
+  status          TopicStatus  @default(NEW)
+  intent          SearchIntent
+  contentType     ContentType  @default(STANDARD)
+  categoryId      String?
+  clusterId       String?
+
+  priorityScore   Int     @default(0) // composite ranking used by the queue
+  commercialScore Int     @default(0)
+  difficulty      Int     @default(0)
+  seasonalWindow  String? // e.g. "Q4" or "2026-11"
+
+  // Dedupe bookkeeping
+  duplicateOfId   String?
+  similarityScore Float?
+  rejectionReason String? @db.Text
+  // Embedding stored as a plain float array; cosine similarity is computed in JS
+  // over candidates pre-filtered by category + recency. Empty = not yet embedded.
+  embedding       Float[] @default([])
+
+  discoveredBy String? // provider/model that proposed it
+  approvedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  category    Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  cluster     ContentCluster? @relation(fields: [clusterId], references: [id], onDelete: SetNull)
+  duplicateOf Topic?          @relation("TopicDuplicates", fields: [duplicateOfId], references: [id], onDelete: SetNull)
+  duplicates  Topic[]         @relation("TopicDuplicates")
+  keywords    TopicKeyword[]
+  research    Research?
+  article     Article?
+  jobs        PublishingJob[]
+
+  @@index([status, priorityScore])
+  @@index([categoryId])
+  @@index([intent])
+}
+
+model TopicKeyword {
+  topicId   String
+  keywordId String
+  role      KeywordRole @default(SECONDARY)
+
+  topic   Topic   @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  keyword Keyword @relation(fields: [keywordId], references: [id], onDelete: Cascade)
+
+  @@id([topicId, keywordId])
+  @@index([keywordId])
+}
+
+// ===========================================================================
+// RESEARCH
+// ===========================================================================
+
+model Research {
+  id             String    @id @default(cuid())
+  topicId        String    @unique
+  summary        String?   @db.Text
+  queriesUsed    String[]  @default([])
+  provider       String // mock | tavily | serpapi | ...
+  conflictsNoted String?   @db.Text
+  isSufficient   Boolean   @default(false) // gate: false blocks drafting
+  lastVerifiedAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  topic   Topic            @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  sources ResearchSource[]
+  facts   ResearchFact[]
+
+  @@index([isSufficient])
+}
+
+model ResearchSource {
+  id          String    @id @default(cuid())
+  researchId  String
+  url         String    @db.Text
+  domain      String
+  title       String?   @db.Text
+  publishedAt DateTime?
+  retrievedAt DateTime  @default(now())
+  excerpt     String?   @db.Text // paraphrase-ready extract, not for verbatim reuse
+  credibility Int       @default(50) // 0-100 domain trust heuristic
+  isPrimary   Boolean   @default(false)
+
+  research      Research        @relation(fields: [researchId], references: [id], onDelete: Cascade)
+  facts         ResearchFact[]
+  articleUsages ArticleSource[]
+
+  @@unique([researchId, url])
+  @@index([domain])
+}
+
+model ResearchFact {
+  id           String      @id @default(cuid())
+  researchId   String
+  sourceId     String?
+  claim        String      @db.Text
+  value        String?     @db.Text // price, stat, date, version…
+  category     String? // pricing | statistic | feature | company | release
+  verdict      FactVerdict @default(UNVERIFIED)
+  confidence   Float       @default(0)
+  isVolatile   Boolean     @default(false) // must be re-checked on refresh
+  conflictNote String?     @db.Text
+  asOfDate     DateTime?
+  createdAt    DateTime    @default(now())
+
+  research Research        @relation(fields: [researchId], references: [id], onDelete: Cascade)
+  source   ResearchSource? @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+
+  @@index([researchId, verdict])
+  @@index([isVolatile])
+}
+
+model ArticleSource {
+  id        String   @id @default(cuid())
+  articleId String
+  sourceId  String
+  usedFor   String? // which section / claim it backs
+  createdAt DateTime @default(now())
+
+  article Article        @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  source  ResearchSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@unique([articleId, sourceId])
+  @@index([sourceId])
+}
+
+// ===========================================================================
+// ARTICLES
+// ===========================================================================
+
+model Article {
+  id       String        @id @default(cuid())
+  topicId  String?       @unique
+  title    String        @db.Text
+  subtitle String?       @db.Text
+  slug     String        @unique
+  status   ArticleStatus @default(RESEARCHING)
+
+  contentType ContentType  @default(STANDARD)
+  intent      SearchIntent @default(INFORMATIONAL)
+  categoryId  String?
+  clusterId   String?
+  authorId    String?
+
+  // Body is stored twice on purpose: sanitized HTML for fast render,
+  // structured blocks so tables/FAQs/callouts render as real components.
+  contentHtml String? @db.Text
+  contentMd   String? @db.Text
+  blocks      Json?
+  excerpt     String? @db.Text
+  wordCount   Int     @default(0)
+  readingTime Int     @default(0) // minutes
+
+  // SEO
+  seoTitle      String?
+  metaDesc      String?
+  ogTitle       String?
+  ogDesc        String?
+  canonicalUrl  String?
+  isIndexable   Boolean @default(true)
+  schemaJson    Json? // Article + Breadcrumb (+ FAQ only when visible FAQs exist)
+  hasVisibleFaq Boolean @default(false)
+
+  // Quality
+  qualityScore  Int     @default(0)
+  rewriteCount  Int     @default(0)
+  factCheckPass Boolean @default(false)
+
+  // Media
+  featuredMediaId String?
+
+  // Lifecycle
+  freshnessTier    FreshnessTier @default(STANDARD)
+  scheduledFor     DateTime?
+  publishedAt      DateTime?
+  updatedContentAt DateTime? // user-visible "Updated" date; distinct from updatedAt
+  lastCheckedAt    DateTime?
+  nextCheckAt      DateTime?
+  eventDate        DateTime? // for NEWS: when the event actually happened
+
+  // Commercial / transparency
+  sponsorship       SponsorshipType @default(NONE)
+  sponsorName       String?
+  hasAffiliateLinks Boolean         @default(false)
+
+  // Ops
+  failureReason String?  @db.Text
+  isSample      Boolean  @default(false) // dev seed data, excluded from prod views
+  isPinned      Boolean  @default(false)
+  viewCount     Int      @default(0)
+  embedding     Float[]  @default([])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  topic         Topic?          @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  category      Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  cluster       ContentCluster? @relation("ClusterMembers", fields: [clusterId], references: [id], onDelete: SetNull)
+  pillarOf      ContentCluster? @relation("ClusterPillar")
+  author        Author?         @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  featuredMedia Media?          @relation("FeaturedMedia", fields: [featuredMediaId], references: [id], onDelete: SetNull)
+
+  keywords      ArticleKeyword[]
+  tags          ArticleTag[]
+  sources       ArticleSource[]
+  revisions     ArticleRevision[]
+  reviews       QualityReview[]
+  outboundLinks InternalLink[]    @relation("LinkSource")
+  inboundLinks  InternalLink[]    @relation("LinkTarget")
+  externalLinks ExternalLink[]
+  media         Media[]           @relation("ArticleMedia")
+  jobs          PublishingJob[]
+  aiUsage       AIUsage[]
+  metrics       ArticleMetric[]
+  videos        ArticleVideo[]
+
+  @@index([status, scheduledFor])
+  @@index([publishedAt(sort: Desc)])
+  @@index([categoryId, publishedAt(sort: Desc)])
+  @@index([clusterId])
+  @@index([nextCheckAt])
+  @@index([isSample])
+}
+
+model ArticleKeyword {
+  articleId String
+  keywordId String
+  role      KeywordRole @default(SECONDARY)
+
+  article Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  keyword Keyword @relation(fields: [keywordId], references: [id], onDelete: Cascade)
+
+  @@id([articleId, keywordId])
+  @@index([keywordId])
+}
+
+model ArticleRevision {
+  id              String         @id @default(cuid())
+  articleId       String
+  version         Int
+  reason          RevisionReason
+  summary         String?        @db.Text
+  changedSections String[]       @default([])
+  contentBefore   String?        @db.Text
+  contentAfter    String?        @db.Text
+  diffJson        Json?
+  qualityBefore   Int?
+  qualityAfter    Int?
+  aiProvider      String?
+  aiModel         String?
+  editorId        String? // set only for human edits
+  createdAt       DateTime       @default(now())
+
+  article Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  editor  User?   @relation(fields: [editorId], references: [id], onDelete: SetNull)
+
+  @@unique([articleId, version])
+  @@index([articleId, createdAt(sort: Desc)])
+}
+
+model QualityReview {
+  id        String @id @default(cuid())
+  articleId String
+  attempt   Int    @default(1)
+
+  // 0-100 each
+  accuracy        Int @default(0)
+  usefulness      Int @default(0)
+  originality     Int @default(0)
+  readability     Int @default(0)
+  intentMatch     Int @default(0)
+  structure       Int @default(0)
+  seo             Int @default(0)
+  factReliability Int @default(0)
+  internalLinking Int @default(0)
+  spamRisk        Int @default(0) // inverted: lower is better
+  totalScore      Int @default(0)
+
+  passed           Boolean  @default(false)
+  weakSections     String[] @default([])
+  feedback         String?  @db.Text
+  unverifiedClaims Json? // claims the reviewer could not tie to research
+  reviewerModel    String?
+  createdAt        DateTime @default(now())
+
+  article Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@unique([articleId, attempt])
+  @@index([totalScore])
+}
+
+// ===========================================================================
+// LINKS
+// ===========================================================================
+
+model InternalLink {
+  id             String   @id @default(cuid())
+  fromArticleId  String
+  toArticleId    String
+  anchorText     String
+  anchorHash     String // hash of normalized anchor; prevents duplicate placement
+  contextSection String?
+  isAutomatic    Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  fromArticle Article @relation("LinkSource", fields: [fromArticleId], references: [id], onDelete: Cascade)
+  toArticle   Article @relation("LinkTarget", fields: [toArticleId], references: [id], onDelete: Cascade)
+
+  @@unique([fromArticleId, toArticleId, anchorHash])
+  @@index([toArticleId])
+}
+
+model ExternalLink {
+  id              String     @id @default(cuid())
+  articleId       String
+  url             String     @db.Text
+  domain          String
+  anchorText      String?
+  status          LinkStatus @default(UNCHECKED)
+  httpStatus      Int?
+  redirectedTo    String?    @db.Text
+  isAffiliate     Boolean    @default(false)
+  affiliateLinkId String?
+  lastCheckedAt   DateTime?
+  checkFailures   Int        @default(0)
+  createdAt       DateTime   @default(now())
+
+  article       Article        @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  affiliateLink AffiliateLink? @relation(fields: [affiliateLinkId], references: [id], onDelete: SetNull)
+
+  @@index([articleId])
+  @@index([status, lastCheckedAt])
+  @@index([domain])
+}
+
+model AffiliateLink {
+  id             String   @id @default(cuid())
+  merchant       String
+  domain         String   @unique // matched against outbound URLs
+  affiliateUrl   String   @db.Text
+  trackingId     String?
+  urlTemplate    String?  @db.Text // e.g. "{url}?tag={trackingId}"
+  categories     String[] @default([])
+  isActive       Boolean  @default(true)
+  maxPerArticle  Int      @default(3)
+  disclosureText String?  @db.Text
+  clickCount     Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  externalLinks ExternalLink[]
+
+  @@index([isActive])
+}
+
+// ===========================================================================
+// SHORT-FORM VIDEO (MoneyPrinterTurbo integration)
+// ===========================================================================
+
+//
+// One row per generated short-form video. MoneyPrinterTurbo runs as a separate
+// service; this table is the only place the two systems touch. Article
+// publishing never waits on it — if MPT is offline the row simply stays FAILED
+// and gets retried, while the article stays live.
+//
+model ArticleVideo {
+  id        String      @id @default(cuid())
+  articleId String
+  taskId    String?     @unique
+  status    VideoStatus @default(QUEUED)
+
+  // Which external renderer produced this row. Kept explicit so a second
+  // provider can be added later without a data migration.
+  provider String @default("moneyprinterturbo")
+
+  // Regeneration counter. A regenerate resets this row and bumps the version
+  // instead of inserting a duplicate, which is what keeps the publish hook
+  // safe to fire repeatedly.
+  version Int @default(1)
+
+  videoTitle       String? // short, non-clickbait title for the social post
+  videoDescription String? @db.Text // 2-4 sentence caption derived from the article
+
+  script       String?  @db.Text // the narration sent to MPT (~30-60 seconds)
+  scriptTerms  String[] @default([]) // stock-footage search terms
+  videoUrl     String?  @db.Text
+  thumbnailUrl String?  @db.Text
+  durationSec  Int?
+  error        String?  @db.Text // last failure reason, surfaced in admin
+  platform     String? // where it was published, once published
+
+  // Generation parameters, snapshotted so a retry reproduces the same output.
+  aspect    String  @default("9:16")
+  source    String  @default("pexels")
+  language  String  @default("en")
+  voiceName String?
+  subtitles Boolean @default(true)
+  bgMusic   Boolean @default(true)
+
+  attempts     Int       @default(0) // retry count
+  maxAttempts  Int       @default(3)
+  lastPolledAt DateTime?
+  startedAt    DateTime? // when dispatch to the renderer began
+  completedAt  DateTime?
+  publishedAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  article Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  // One active video per article per aspect ratio. This is what makes the
+  // "generate video on publish" hook safe to fire more than once.
+  @@unique([articleId, aspect])
+  @@index([status, createdAt])
+  @@index([status, lastPolledAt])
+  @@index([articleId])
+}
+
+// ===========================================================================
+// MEDIA
+// ===========================================================================
+
+model Media {
+  id             String      @id @default(cuid())
+  articleId      String?
+  url            String      @db.Text
+  storageKey     String?
+  altText        String      @db.Text // required for accessibility + SEO
+  caption        String?     @db.Text
+  width          Int?
+  height         Int?
+  mimeType       String?
+  fileSize       Int?
+  blurDataUrl    String?
+  source         MediaSource @default(AI_GENERATED)
+  sourceUrl      String?     @db.Text
+  license        String?
+  attribution    String?
+  prompt         String?     @db.Text // for AI-generated images
+  generationCost Decimal?    @db.Decimal(10, 6)
+  createdAt      DateTime    @default(now())
+
+  article     Article?  @relation("ArticleMedia", fields: [articleId], references: [id], onDelete: SetNull)
+  featuredFor Article[] @relation("FeaturedMedia")
+
+  @@index([articleId])
+  @@index([source])
+}
+
+// ===========================================================================
+// JOBS & AUTOMATION
+// ===========================================================================
+
+model PublishingJob {
+  id           String    @id @default(cuid())
+  articleId    String?
+  topicId      String?
+  scheduledFor DateTime
+  publishedAt  DateTime?
+  status       JobStatus @default(PENDING)
+  priority     Int       @default(0)
+  retryCount   Int       @default(0)
+  maxRetries   Int       @default(3)
+  lastError    String?   @db.Text
+  lockedBy     String? // worker instance id
+  lockedAt     DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  article Article? @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  topic   Topic?   @relation(fields: [topicId], references: [id], onDelete: SetNull)
+
+  // Guarantees a re-running cron cannot double-schedule the same article.
+  @@unique([articleId, scheduledFor])
+  @@index([status, scheduledFor])
+}
+
+model AutomationJob {
+  id             String    @id @default(cuid())
+  type           JobType
+  status         JobStatus @default(PENDING)
+  // Deterministic key mirrored to the BullMQ jobId for cross-restart idempotency.
+  idempotencyKey String    @unique
+  payload        Json?
+  result         Json?
+  attempts       Int       @default(0)
+  maxAttempts    Int       @default(3)
+  lastError      String?   @db.Text
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  durationMs     Int?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([type, status])
+  @@index([createdAt(sort: Desc)])
+}
+
+// ===========================================================================
+// COST, ANALYTICS, OPS
+// ===========================================================================
+
+model AIUsage {
+  id           String   @id @default(cuid())
+  articleId    String?
+  task         AiTask
+  provider     String
+  model        String
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  requests     Int      @default(1)
+  costUsd      Decimal  @db.Decimal(10, 6)
+  latencyMs    Int?
+  succeeded    Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  article Article? @relation(fields: [articleId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt(sort: Desc)])
+  @@index([articleId])
+  @@index([task, provider])
+}
+
+model ArticleMetric {
+  id            String   @id @default(cuid())
+  articleId     String
+  date          DateTime @db.Date
+  source        String   @default("gsc") // gsc | ga4 | internal
+  impressions   Int      @default(0)
+  clicks        Int      @default(0)
+  ctr           Float    @default(0)
+  avgPosition   Float?
+  pageviews     Int      @default(0)
+  avgTimeOnPage Int?
+  createdAt     DateTime @default(now())
+
+  article Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@unique([articleId, date, source])
+  @@index([date])
+}
+
+model NewsletterSubscriber {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  source         String? // which CTA converted them
+  isConfirmed    Boolean   @default(false)
+  confirmToken   String?   @unique
+  unsubscribedAt DateTime?
+  // Provider-agnostic: sync state for beehiiv / ConvertKit / Mailchimp.
+  externalId     String?
+  syncedAt       DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([isConfirmed])
+}
+
+model AdSlot {
+  id           String      @id @default(cuid())
+  name         String
+  placement    AdPlacement
+  isActive     Boolean     @default(false)
+  adCode       String?     @db.Text
+  adClient     String?
+  adUnitId     String?
+  categoryIds  String[]    @default([]) // empty = all categories
+  minWordCount Int         @default(0)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@unique([placement, name])
+  @@index([isActive])
+}
+
+model SiteSetting {
+  id          String      @id @default(cuid())
+  key         String      @unique
+  value       Json
+  type        SettingType @default(STRING)
+  group       String      @default("general") // general | niche | ai | seo | publishing | ads
+  label       String?
+  description String?     @db.Text
+  isSecret    Boolean     @default(false) // never returned by the settings API
+  updatedAt   DateTime    @updatedAt
+
+  @@index([group])
+}
+
+model Notification {
+  id         String            @id @default(cuid())
+  userId     String?
+  level      NotificationLevel @default(INFO)
+  title      String
+  message    String?           @db.Text
+  entityType String? // article | topic | job
+  entityId   String?
+  isRead     Boolean           @default(false)
+  createdAt  DateTime          @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([createdAt(sort: Desc)])
+}
+
+model ErrorLog {
+  id         String   @id @default(cuid())
+  scope      String // queue name, route, or module
+  jobType    JobType?
+  entityType String?
+  entityId   String?
+  message    String   @db.Text
+  stack      String?  @db.Text
+  context    Json?
+  isResolved Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@index([scope, createdAt(sort: Desc)])
+  @@index([isResolved])
+}

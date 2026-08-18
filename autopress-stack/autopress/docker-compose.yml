@@ -1,0 +1,122 @@
+# The whole AutoPress stack, including the MoneyPrinterTurbo render service.
+#
+#   docker compose up -d --build      start everything
+#   docker compose logs -f worker     follow one service
+#   docker compose down               stop (data survives in the volumes)
+#
+# MoneyPrinterTurbo is built from the sibling checkout at ../MoneyPrinterTurbo.
+# It stays a separate service on purpose: it is a Python/ffmpeg workload with a
+# very different failure profile, and AutoPress must keep publishing articles
+# when it is down. Compose just means you no longer start them by hand.
+#
+# Config lives in .env, which is NOT baked into any image.
+
+name: autopress
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-autopress}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-autopress}
+      POSTGRES_DB: ${POSTGRES_DB:-autoblog}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    # Bound to loopback: nothing here should be reachable from the network.
+    ports: ['127.0.0.1:5432:5432']
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-autopress} -d ${POSTGRES_DB:-autoblog}']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes']
+    volumes:
+      - redis-data:/data
+    ports: ['127.0.0.1:6379:6379']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mpt:
+    build:
+      context: ../MoneyPrinterTurbo
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      redis: { condition: service_healthy }
+    # Your config.toml is the single source of truth for API keys. It is mounted
+    # read-only and rewritten into the container's copy at start, because two
+    # values only make sense inside Compose: the service must listen on all
+    # interfaces to be reachable from the web container, and Redis is a
+    # service name here rather than localhost.
+    command:
+      - sh
+      - -c
+      - |
+        sed -e 's/^listen_host.*/listen_host = "0.0.0.0"/' \
+            -e 's/^redis_host.*/redis_host = "redis"/' \
+            /config/config.toml > /MoneyPrinterTurbo/config.toml
+        exec python3 main.py
+    volumes:
+      - ../MoneyPrinterTurbo/config.toml:/config/config.toml:ro
+      - mpt-storage:/MoneyPrinterTurbo/storage
+    ports: ['127.0.0.1:8080:8080']
+    healthcheck:
+      test: ['CMD-SHELL', 'python3 -c "import urllib.request;urllib.request.urlopen(''http://127.0.0.1:8080/docs'')"']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    env_file: [.env]
+    environment: &app-env
+      # Service names, not localhost: these override whatever .env says, because
+      # inside Compose "localhost" is the container itself.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-autopress}:${POSTGRES_PASSWORD:-autopress}@postgres:5432/${POSTGRES_DB:-autoblog}?schema=public
+      REDIS_URL: redis://redis:6379
+      MPT_API_URL: http://mpt:8080
+      # The browser cannot resolve "mpt", so finished videos are linked through
+      # the port published on the host.
+      MPT_PUBLIC_BASE_URL: ${MPT_PUBLIC_BASE_URL:-http://127.0.0.1:8080}
+    # Migrations run once, here, before the server starts. The worker waits for
+    # the web service so they cannot race each other applying the same migration.
+    command: sh -c "npx prisma migrate deploy && npm run start"
+    ports: ['3000:3000']
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -fsS http://127.0.0.1:3000/api/health || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      web: { condition: service_healthy }
+      mpt: { condition: service_started }
+    env_file: [.env]
+    environment: *app-env
+    command: ['npm', 'run', 'worker']
+
+volumes:
+  postgres-data:
+  redis-data:
+  mpt-storage:
