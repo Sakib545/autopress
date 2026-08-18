@@ -17,8 +17,6 @@ import { AdSlotRender } from '@/components/site/ad-slot';
 import { Badge } from '@/components/ui/badge';
 import { ViewPing } from '@/components/site/view-ping';
 
-export const revalidate = 900;
-export const dynamicParams = true;
 
 type Params = { params: Promise<{ category: string; slug: string }> };
 
@@ -35,20 +33,6 @@ async function loadArticle(slug: string) {
   });
 }
 
-export async function generateStaticParams() {
-  try {
-    const articles = await prisma.article.findMany({
-      where: { status: 'PUBLISHED' },
-      orderBy: { publishedAt: 'desc' },
-      take: 50,
-      select: { slug: true, category: { select: { slug: true } } },
-    });
-    return articles.map((a) => ({ category: a.category?.slug ?? 'articles', slug: a.slug }));
-  } catch {
-    // Database unavailable at build time — pages render on demand instead.
-    return [];
-  }
-}
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { slug } = await params;

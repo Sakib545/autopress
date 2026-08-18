@@ -8,7 +8,6 @@ import { ArticleCard } from '@/components/site/article-card';
 import { Breadcrumbs } from '@/components/site/breadcrumbs';
 import { EmptyState } from '@/components/ui/empty-state';
 
-export const revalidate = 3600;
 
 type Params = { params: Promise<{ slug: string }> };
 

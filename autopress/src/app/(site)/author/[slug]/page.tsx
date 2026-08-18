@@ -9,7 +9,6 @@ import { ArticleCard } from '@/components/site/article-card';
 import { Breadcrumbs } from '@/components/site/breadcrumbs';
 import { Badge } from '@/components/ui/badge';
 
-export const revalidate = 3600;
 
 type Params = { params: Promise<{ slug: string }> };
 

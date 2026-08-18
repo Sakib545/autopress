@@ -11,19 +11,10 @@ import { Breadcrumbs } from '@/components/site/breadcrumbs';
 import { Pagination } from '@/components/site/pagination';
 import { EmptyState } from '@/components/ui/empty-state';
 
-export const revalidate = 900;
 const PER_PAGE = 12;
 
 type Params = { params: Promise<{ slug: string }>; searchParams: Promise<{ page?: string }> };
 
-export async function generateStaticParams() {
-  try {
-    const categories = await prisma.category.findMany({ select: { slug: true }, take: 50 });
-    return categories.map((c) => ({ slug: c.slug }));
-  } catch {
-    return [];
-  }
-}
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { slug } = await params;

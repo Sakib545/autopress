@@ -4,6 +4,11 @@ import { organizationSchema } from '@/lib/seo/schema';
 import { getSettings } from '@/lib/settings';
 import { env } from '@/lib/env';
 
+/** Every page under this layout reads from the database — the header's category
+ *  nav alone makes that true — so the whole segment is rendered per request.
+ *  This also keeps `next build` from needing a reachable database. */
+export const dynamic = 'force-dynamic';
+
 export default async function SiteLayout({ children }: { children: React.ReactNode }) {
   const settings = await getSettings();
   return (

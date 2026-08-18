@@ -6,6 +6,10 @@ import { POLICIES } from '@/content/policies';
 
 /** Only indexable URLs appear here: no empty categories, no thin tags,
  *  no search pages, no admin. */
+/** Built per request: a sitemap frozen at build time would never list an
+ *  article published afterwards. */
+export const dynamic = 'force-dynamic';
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = env.siteUrl;
   const staticEntries: MetadataRoute.Sitemap = [

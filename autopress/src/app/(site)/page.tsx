@@ -9,7 +9,6 @@ import { AdSlotRender } from '@/components/site/ad-slot';
 import { EmptyState } from '@/components/ui/empty-state';
 import { formatDate } from '@/lib/utils';
 
-export const revalidate = 300;
 
 export default async function HomePage() {
   const [settings, latest, picks, trending, guides, comparisons, reviews, categories, total] = await Promise.all([
