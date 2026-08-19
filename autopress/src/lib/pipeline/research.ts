@@ -61,7 +61,7 @@ export async function buildResearch(topicId: string) {
   const primary = topic.keywords.find((k) => k.role === 'PRIMARY')?.keyword.term ?? null;
   const queries = queriesFor(topic.title, primary, topic.intent);
 
-  const hits: { title: string; url: string; domain: string; excerpt: string; publishedAt?: string }[] = [];
+  const hits: { title: string; url: string; domain: string; excerpt: string; publishedAt?: string; score?: number }[] = [];
   for (const q of queries) {
     try {
       const results = await provider.search(q, { maxResults: 5, preferredDomains: settings.preferredSources.filter((s) => s.includes('.')) });
@@ -71,12 +71,46 @@ export async function buildResearch(topicId: string) {
     }
   }
 
-  // Deduplicate by URL, keep the most credible sources first.
+  // Deduplicate and rank by topic relevance, search position and source trust.
+  // Commercial comparisons prefer product/vendor pages over generic encyclopedia
+  // entries, while still allowing independent sources for corroboration.
+  const topicTerms = new Set(
+    `${topic.title} ${primary ?? ''}`
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((term) => term.length > 2 && !['and', 'for', 'the', 'with', 'best', 'top', 'owners', 'comparing'].includes(term)),
+  );
+  const relevance = (hit: (typeof hits)[number]) => {
+    const haystack = `${hit.title} ${hit.domain} ${hit.excerpt}`.toLowerCase();
+    let matches = 0;
+    for (const term of topicTerms) if (haystack.includes(term)) matches++;
+    return topicTerms.size ? matches / topicTerms.size : 0;
+  };
+  const rank = (hit: (typeof hits)[number]) => {
+    const trust = credibilityFor(hit.domain, settings.preferredSources);
+    const encyclopediaPenalty =
+      (topic.intent === 'COMMERCIAL' || topic.intent === 'COMPARISON') && /wikipedia\.org$/.test(hit.domain) ? 35 : 0;
+    return trust + (hit.score ?? 0.5) * 100 + relevance(hit) * 40 - encyclopediaPenalty;
+  };
+
   const byUrl = new Map<string, (typeof hits)[number]>();
-  for (const h of hits) if (!byUrl.has(h.url)) byUrl.set(h.url, h);
-  const unique = Array.from(byUrl.values())
-    .sort((a, b) => credibilityFor(b.domain, settings.preferredSources) - credibilityFor(a.domain, settings.preferredSources))
-    .slice(0, 10);
+  for (const h of hits) if (!byUrl.has(h.url) && relevance(h) >= 0.2) byUrl.set(h.url, h);
+  const unique = Array.from(byUrl.values()).sort((a, b) => rank(b) - rank(a)).slice(0, 10);
+
+  // Search snippets are often too shallow for factual writing. Fetch the actual
+  // page text for the shortlisted URLs, falling back to the snippet only when a
+  // site blocks automated reading.
+  const enriched = await Promise.all(
+    unique.map(async (hit) => {
+      const page = await provider.fetchPage(hit.url).catch(() => null);
+      return {
+        ...hit,
+        title: page?.title || hit.title,
+        excerpt: (page?.text || hit.excerpt).slice(0, 4000),
+        publishedAt: page?.publishedAt || hit.publishedAt,
+      };
+    }),
+  );
 
   const research = await prisma.research.upsert({
     where: { topicId },
@@ -88,7 +122,7 @@ export async function buildResearch(topicId: string) {
   await prisma.researchSource.deleteMany({ where: { researchId: research.id } });
 
   const sourceRows = [];
-  for (const h of unique) {
+  for (const h of enriched) {
     const row = await prisma.researchSource.create({
       data: {
         researchId: research.id,
