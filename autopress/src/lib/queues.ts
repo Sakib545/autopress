@@ -78,6 +78,17 @@ export async function enqueue<T extends QueueName>(
   const queue = getQueue(name);
   if (!queue) return false;
   const jobId = opts?.idempotencyKey ?? `${name}:${JSON.stringify(payload)}`;
+
+  // BullMQ keeps failed jobs for diagnostics. A later manual retry with the
+  // same deterministic id would otherwise return that old job and silently
+  // do nothing, leaving the topic stuck in QUEUED forever.
+  const existing = await queue.getJob(jobId);
+  if (existing) {
+    const state = await existing.getState();
+    if (state === 'failed') await existing.remove();
+    else return true;
+  }
+
   await queue.add(name, payload, { ...opts, jobId });
   return true;
 }
