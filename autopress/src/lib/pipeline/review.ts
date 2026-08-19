@@ -53,6 +53,8 @@ export async function reviewArticle(articleId: string, attempt: number): Promise
 
   const weakSections = Array.isArray(data.weakSections) ? data.weakSections : [];
   const feedback = [data.feedback ?? '', ...failures.map((f) => `Hard check: ${f}`)].filter(Boolean).join(' | ');
+  const factCheckPass = unverified.length === 0 && failures.length === 0;
+  const passed = score >= settings.minQualityScore && factCheckPass;
 
   await prisma.qualityReview.upsert({
     where: { articleId_attempt: { articleId, attempt } },
@@ -61,19 +63,18 @@ export async function reviewArticle(articleId: string, attempt: number): Promise
       attempt,
       ...card,
       totalScore: score,
-      passed: score >= settings.minQualityScore,
+      passed,
       weakSections,
       feedback: feedback.slice(0, 4000),
       unverifiedClaims: unverified as never,
       reviewerModel: 'quality-review',
     },
-    update: { ...card, totalScore: score, passed: score >= settings.minQualityScore, weakSections, feedback: feedback.slice(0, 4000) },
+    update: { ...card, totalScore: score, passed, weakSections, feedback: feedback.slice(0, 4000) },
   });
 
-  const passed = score >= settings.minQualityScore;
   await prisma.article.update({
     where: { id: articleId },
-    data: { qualityScore: score, factCheckPass: unverified.length === 0 && !failures.length },
+    data: { qualityScore: score, factCheckPass },
   });
 
   if (passed) return { score, passed, action: 'PROCEED', weakSections, feedback };
