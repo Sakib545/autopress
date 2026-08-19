@@ -7,17 +7,60 @@ import { enqueue } from '../queues';
 import { env } from '../env';
 import { requestArticleVideo } from './article-video';
 
+const PUBLISH_TIME_ZONE = process.env.SITE_TIMEZONE || 'Asia/Dhaka';
+
+type ZonedParts = { year: number; month: number; day: number; hour: number; minute: number; second: number };
+
+function zonedParts(date: Date, timeZone: string): ZonedParts {
+  const entries = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date).filter((part) => part.type !== 'literal').map((part) => [part.type, Number(part.value)]);
+  return Object.fromEntries(entries) as ZonedParts;
+}
+
+function localTimeInZone(year: number, month: number, day: number, hour: number, minute: number, timeZone: string) {
+  const wanted = Date.UTC(year, month - 1, day, hour, minute, 0);
+  let instant = wanted;
+  // Two passes also cover time zones with daylight-saving transitions.
+  for (let pass = 0; pass < 2; pass++) {
+    const actual = zonedParts(new Date(instant), timeZone);
+    const represented = Date.UTC(actual.year, actual.month - 1, actual.day, actual.hour, actual.minute, actual.second);
+    instant += wanted - represented;
+  }
+  return new Date(instant);
+}
+
 /** Next N publish slots derived from the admin's configured daily times. */
-export function upcomingSlots(publishTimes: string[], count: number, from = new Date()) {
+export function upcomingSlots(
+  publishTimes: string[],
+  count: number,
+  from = new Date(),
+  timeZone = PUBLISH_TIME_ZONE,
+) {
   const slots: Date[] = [];
   const times = [...publishTimes].sort();
+  const base = zonedParts(from, timeZone);
+
   for (let dayOffset = 0; slots.length < count && dayOffset < 30; dayOffset++) {
+    const calendar = new Date(Date.UTC(base.year, base.month - 1, base.day + dayOffset));
     for (const time of times) {
-      const [h, m] = time.split(':').map(Number);
-      const d = new Date(from);
-      d.setDate(d.getDate() + dayOffset);
-      d.setHours(h || 9, m || 0, 0, 0);
-      if (d > from) slots.push(new Date(d));
+      const [hour, minute] = time.split(':').map(Number);
+      const slot = localTimeInZone(
+        calendar.getUTCFullYear(),
+        calendar.getUTCMonth() + 1,
+        calendar.getUTCDate(),
+        Number.isFinite(hour) ? hour : 9,
+        Number.isFinite(minute) ? minute : 0,
+        timeZone,
+      );
+      if (slot > from) slots.push(slot);
       if (slots.length >= count) break;
     }
   }
