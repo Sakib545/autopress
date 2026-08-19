@@ -62,10 +62,13 @@ export function resolveProviderChain(primaryId?: string): LLMProvider[] {
 export function resolveModel(task: AiTaskName, providerId?: string) {
   const key = providerKey(providerId);
   const tier = TASK_TIER[task] ?? 'standard';
-  if (tier === 'premium' && env.modelWriting) return env.modelWriting;
-  if (task === 'QUALITY_REVIEW' && env.modelReview) return env.modelReview;
-  if (tier === 'cheap' && env.modelCheap) return env.modelCheap;
-  if (tier === 'standard' && env.modelStandard) return env.modelStandard;
+  // Custom model environment variables target the configured primary provider.
+  // A fallback must use its own compatible model identifier.
+  const isPrimary = key === providerKey();
+  if (isPrimary && tier === 'premium' && env.modelWriting) return env.modelWriting;
+  if (isPrimary && task === 'QUALITY_REVIEW' && env.modelReview) return env.modelReview;
+  if (isPrimary && tier === 'cheap' && env.modelCheap) return env.modelCheap;
+  if (isPrimary && tier === 'standard' && env.modelStandard) return env.modelStandard;
   return MODELS[key]?.[tier] ?? MODELS.mock[tier];
 }
 
