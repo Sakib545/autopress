@@ -7,6 +7,7 @@ import { researchDigest } from './research';
 import { uniqueArticleSlug } from '../seo/slug';
 import { countWords, readingTimeMinutes } from '../utils';
 import { tierFor } from '../content/freshness';
+import { env } from '../env';
 
 /** Creates the Article shell for an approved topic (idempotent per topic). */
 export async function createArticleForTopic(topicId: string) {
@@ -84,7 +85,7 @@ export async function draftArticle(articleId: string) {
     targetWords,
   });
 
-  const result = await callLLM({ ...prompt, articleId, essential: true, temperature: 0.7, maxTokens: 8000 });
+  const result = await callLLM({ ...prompt, articleId, essential: true, temperature: 0.7, maxTokens: env.aiProvider === 'local' ? 3200 : 8000 });
   const md = result.text.trim();
   const words = countWords(md);
 
@@ -150,7 +151,7 @@ export async function rewriteArticle(articleId: string, attempt: number) {
     attempt,
   });
 
-  const result = await callLLM({ ...prompt, articleId, essential: true, temperature: 0.55, maxTokens: 8000 });
+  const result = await callLLM({ ...prompt, articleId, essential: true, temperature: 0.55, maxTokens: env.aiProvider === 'local' ? 3200 : 8000 });
   const md = result.text.trim();
   const words = countWords(md);
 
