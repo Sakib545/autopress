@@ -1,7 +1,6 @@
 import Link from 'next/link';
 import { prisma } from '@/lib/db';
 import { getSettings } from '@/lib/settings';
-import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { SearchBox } from './search-box';
 
 export async function SiteHeader() {
@@ -16,51 +15,67 @@ export async function SiteHeader() {
   ]);
 
   return (
-    <header className="sticky top-0 z-40 border-b rule bg-white/80 backdrop-blur-xl backdrop-saturate-150 dark:bg-ink-950/75">
-      <div className="container-page flex h-16 items-center gap-6">
-        <Link href="/" className="group flex shrink-0 items-center gap-2.5">
-          {/* Monogram mark keeps the wordmark anchored at every breakpoint. */}
+    <header className="sticky top-0 z-40 border-b border-ink-200/90 bg-[#f8fafc]/95 backdrop-blur-xl">
+      <div className="container-page flex h-[4.75rem] items-center gap-5">
+        <Link href="/" className="group flex shrink-0 items-center gap-3">
           <span
             aria-hidden
-            className="grid h-8 w-8 place-items-center rounded-lg bg-accent-600 font-serif text-sm font-semibold text-white shadow-card transition-transform duration-200 ease-swift group-hover:scale-105"
+            className="grid h-10 w-10 place-items-center rounded-xl bg-accent-600 font-serif text-base font-semibold text-white shadow-card transition-transform duration-200 ease-swift group-hover:scale-105"
           >
             {settings.siteName.trim().charAt(0).toUpperCase() || 'A'}
           </span>
-          <span className="font-serif text-lg font-semibold tracking-tight">{settings.siteName}</span>
+          <span className="font-serif text-xl font-semibold tracking-tight text-ink-950 sm:text-2xl">
+            {settings.siteName}
+          </span>
         </Link>
 
-        <nav className="hidden flex-1 items-center gap-1 md:flex" aria-label="Categories">
-          {categories.map((c) => (
-            <Link
-              key={c.slug}
-              href={`/category/${c.slug}`}
-              className="rounded-lg px-2.5 py-1.5 text-sm text-ink-600 transition-colors hover:bg-ink-100 hover:text-ink-900 dark:text-ink-400 dark:hover:bg-ink-800/70 dark:hover:text-ink-100"
-            >
-              {c.name}
-            </Link>
-          ))}
-        </nav>
+        <span className="hidden h-8 w-px bg-ink-200 lg:block" />
+        <p className="hidden max-w-xs text-xs leading-5 text-ink-500 lg:block">
+          {settings.siteDescription}
+        </p>
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2 sm:gap-3">
           <SearchBox />
-          <ThemeToggle />
+          <a
+            href="#newsletter"
+            className="hidden rounded-lg bg-accent-600 px-4 py-2.5 text-sm font-semibold text-white shadow-card transition hover:bg-accent-700 hover:shadow-lift sm:inline-flex"
+          >
+            Subscribe
+          </a>
         </div>
       </div>
 
-      {/* Categories wrap to a scrollable strip on mobile rather than overflowing. */}
-      {categories.length > 0 && (
-        <nav aria-label="Categories" className="flex gap-2 overflow-x-auto border-t rule px-4 py-2 md:hidden no-scrollbar">
-          {categories.map((c) => (
+      <nav aria-label="Primary navigation" className="border-t border-ink-200/80">
+        <div className="container-page flex items-center gap-1 overflow-x-auto py-2 no-scrollbar">
+          <Link
+            href="/#latest"
+            className="whitespace-nowrap rounded-lg bg-accent-50 px-3 py-1.5 text-sm font-semibold text-accent-700 transition-colors hover:bg-accent-100"
+          >
+            Latest research
+          </Link>
+          {categories.map((category) => (
             <Link
-              key={c.slug}
-              href={`/category/${c.slug}`}
-              className="whitespace-nowrap rounded-full bg-ink-100 px-3 py-1 text-sm text-ink-700 dark:bg-ink-800/70 dark:text-ink-300"
+              key={category.slug}
+              href={'/category/' + category.slug}
+              className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm text-ink-600 transition-colors hover:bg-white hover:text-ink-950"
             >
-              {c.name}
+              {category.name}
             </Link>
           ))}
-        </nav>
-      )}
+          <Link
+            href="/editorial-policy"
+            className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm text-ink-600 transition-colors hover:bg-white hover:text-ink-950"
+          >
+            Methodology
+          </Link>
+          <Link
+            href="/about"
+            className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm text-ink-600 transition-colors hover:bg-white hover:text-ink-950"
+          >
+            About
+          </Link>
+        </div>
+      </nav>
     </header>
   );
 }
