@@ -38,13 +38,19 @@ export class OpenAIProvider implements LLMProvider {
     return { 'Content-Type': 'application/json', ...(key ? { Authorization: 'Bearer ' + key } : {}) };
   }
 
+  private timeoutMs() {
+    // CPU-hosted local models need longer than cloud APIs, especially while
+    // Ollama loads the model or handles a long-form generation.
+    return this.id === 'local' ? Math.max(env.aiRequestTimeoutMs, 240_000) : env.aiRequestTimeoutMs;
+  }
+
   async complete(model: string, req: LLMRequest): Promise<LLMResult> {
     if (!this.isConfigured()) throw new ProviderNotConfiguredError(this.id);
     const started = Date.now();
     const res = await fetch(this.baseUrl() + '/chat/completions', {
       method: 'POST',
       headers: this.headers(),
-      signal: AbortSignal.timeout(env.aiRequestTimeoutMs),
+      signal: AbortSignal.timeout(this.timeoutMs()),
       body: JSON.stringify({
         model,
         max_tokens: req.maxTokens ?? 4096,
@@ -77,7 +83,7 @@ export class OpenAIProvider implements LLMProvider {
     const res = await fetch(this.baseUrl() + '/embeddings', {
       method: 'POST',
       headers: this.headers(),
-      signal: AbortSignal.timeout(env.aiRequestTimeoutMs),
+      signal: AbortSignal.timeout(this.timeoutMs()),
       body: JSON.stringify({
         model: this.options.embeddingModel?.() ?? 'text-embedding-3-small',
         input: text.slice(0, 8000),
