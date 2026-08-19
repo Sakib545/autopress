@@ -16,6 +16,14 @@ export type ReviewOutcome = {
   feedback: string;
 };
 
+function unsupportedPricingClaims(content: string, research: string): string[] {
+  const claims = [...new Set(content.match(/[$€£]\s?\d[\d,]*(?:\.\d{1,2})?/g) ?? [])];
+  const evidence = research.toLowerCase().replace(/[\s,]/g, '');
+  return claims
+    .filter((claim) => !evidence.includes(claim.toLowerCase().replace(/[\s,]/g, '')))
+    .map((claim) => `unsupported pricing claim: ${claim}`);
+}
+
 export async function reviewArticle(articleId: string, attempt: number): Promise<ReviewOutcome> {
   const settings = await getSettings();
   const article = await prisma.article.findUnique({
@@ -41,12 +49,15 @@ export async function reviewArticle(articleId: string, attempt: number): Promise
   let score = totalScore(card);
 
   // Deterministic gates the reviewer model cannot override.
-  const failures = hardChecks(article.contentMd, {
-    minWords: settings.articleMinWords,
-    maxWords: settings.articleMaxWords,
-    wordCount: article.wordCount,
-    authorIsHuman: article.author?.isHuman ?? false,
-  });
+  const failures = [
+    ...hardChecks(article.contentMd, {
+      minWords: settings.articleMinWords,
+      maxWords: settings.articleMaxWords,
+      wordCount: article.wordCount,
+      authorIsHuman: article.author?.isHuman ?? false,
+    }),
+    ...unsupportedPricingClaims(article.contentMd, digest.text),
+  ];
   const unverified = Array.isArray(data.unverifiedClaims) ? data.unverifiedClaims : [];
   if (failures.length) score = Math.min(score, 60);
   if (unverified.length > 3) score = Math.min(score, 65);
@@ -69,7 +80,7 @@ export async function reviewArticle(articleId: string, attempt: number): Promise
       unverifiedClaims: unverified as never,
       reviewerModel: 'quality-review',
     },
-    update: { ...card, totalScore: score, passed, weakSections, feedback: feedback.slice(0, 4000) },
+    update: { ...card, totalScore: score, passed, weakSections, feedback: feedback.slice(0, 4000), unverifiedClaims: unverified as never },
   });
 
   await prisma.article.update({
