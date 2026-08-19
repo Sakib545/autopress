@@ -13,7 +13,7 @@ export class OpenAIProvider implements LLMProvider {
     if (!this.isConfigured()) throw new ProviderNotConfiguredError('openai');
     const started = Date.now();
 
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    const res = await fetch(`${env.openaiBaseUrl}/chat/completions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.openaiKey}` },
       body: JSON.stringify({

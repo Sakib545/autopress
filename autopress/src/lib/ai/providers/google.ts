@@ -15,9 +15,11 @@ export class GoogleProvider implements LLMProvider {
     if (!this.isConfigured()) throw new ProviderNotConfiguredError('google');
     const started = Date.now();
 
-    const res = await fetch(`${BASE}/${model}:generateContent?key=${env.googleKey}`, {
+    // The key travels in a header, not the query string: URLs end up in proxy
+    // logs and error messages, and this one is a credential.
+    const res = await fetch(`${BASE}/${model}:generateContent`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.googleKey },
       body: JSON.stringify({
         ...(req.system ? { systemInstruction: { parts: [{ text: req.system }] } } : {}),
         contents: [{ role: 'user', parts: [{ text: req.prompt }] }],

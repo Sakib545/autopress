@@ -44,8 +44,8 @@ const TASK_TIER: Record<AiTaskName, Tier> = {
 const MODELS: Record<string, Record<Tier, string>> = {
   mock: { cheap: 'mock-model', standard: 'mock-model', premium: 'mock-model' },
   openai: { cheap: 'gpt-4o-mini', standard: 'gpt-4o-mini', premium: 'gpt-4o' },
-  anthropic: { cheap: 'claude-haiku-4-5', standard: 'claude-haiku-4-5', premium: 'claude-sonnet-4-6' },
-  google: { cheap: 'gemini-2.0-flash', standard: 'gemini-2.0-flash', premium: 'gemini-1.5-pro' },
+  anthropic: { cheap: 'claude-haiku-4-5', standard: 'claude-haiku-4-5', premium: 'claude-sonnet-5' },
+  google: { cheap: 'gemini-2.5-flash-lite', standard: 'gemini-2.5-flash', premium: 'gemini-2.5-pro' },
 };
 
 export function resolveProvider(id?: string): LLMProvider {
@@ -63,6 +63,7 @@ export function resolveModel(task: AiTaskName, providerId?: string) {
   if (tier === 'premium' && env.modelWriting) return env.modelWriting;
   if (task === 'QUALITY_REVIEW' && env.modelReview) return env.modelReview;
   if (tier === 'cheap' && env.modelCheap) return env.modelCheap;
+  if (tier === 'standard' && env.modelStandard) return env.modelStandard;
 
   return MODELS[key]?.[tier] ?? MODELS.mock[tier];
 }

@@ -21,6 +21,11 @@ export const env = {
   modelWriting: process.env.AI_MODEL_WRITING ?? '',
   modelReview: process.env.AI_MODEL_REVIEW ?? '',
   modelCheap: process.env.AI_MODEL_CHEAP ?? '',
+  modelStandard: process.env.AI_MODEL_STANDARD ?? '',
+  // Any OpenAI-compatible router (NaraRouter, OpenRouter, a self-hosted
+  // gateway) can stand in for OpenAI itself — only the base URL changes.
+  // Trailing slashes are stripped so both forms of the value work.
+  openaiBaseUrl: (process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1').replace(/\/+$/, ''),
 
   researchProvider: (process.env.RESEARCH_PROVIDER ?? 'mock').toLowerCase(),
   tavilyKey: process.env.TAVILY_API_KEY ?? '',
