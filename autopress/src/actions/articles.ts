@@ -199,7 +199,7 @@ export async function updateArticleAction(formData: FormData): Promise<ActionSta
           readingTime: readingTimeMinutes(words),
           status: 'MANUAL_REVIEW',
           factCheckPass: false,
-          qualityScore: null,
+          qualityScore: 0,
           updatedContentAt: new Date(),
         },
         select: { slug: true, category: { select: { slug: true } } },
