@@ -24,6 +24,45 @@ const xmlValue = (block: string, tag: string) => {
   return clean(value.replace(/^<!\[CDATA\[/, '').replace(/\]\]>$/, ''));
 };
 
+const OFFICIAL_HINTS: Array<{ match: RegExp; sources: Array<Omit<SearchHit, 'domain'>> }> = [
+  {
+    match: /content creation|content creator|ai writing/i,
+    sources: [
+      { title: 'Canva Magic Studio', url: 'https://www.canva.com/newsroom/news/magic-studio/', excerpt: 'Official Canva product announcement and feature overview.', score: 1 },
+      { title: 'Adobe Firefly', url: 'https://www.adobe.com/products/firefly.html', excerpt: 'Official Adobe Firefly product and feature overview.', score: 1 },
+      { title: 'OpenAI for content creation', url: 'https://openai.com/solutions/use-case/content-creation/', excerpt: 'Official OpenAI content-creation use-case overview.', score: 1 },
+    ],
+  },
+  {
+    match: /chatbot|customer support|customer service/i,
+    sources: [
+      { title: 'HubSpot Chatbot Builder', url: 'https://www.hubspot.com/products/crm/chatbot-builder', excerpt: 'Official HubSpot chatbot product page.', score: 1 },
+      { title: 'Intercom Fin for small business', url: 'https://www.intercom.com/small-business', excerpt: 'Official Intercom Fin product page for small businesses.', score: 1 },
+      { title: 'Intercom Fin overview', url: 'https://www.intercom.com/help/en/articles/9515824-what-is-fin', excerpt: 'Official Intercom help documentation for Fin.', score: 0.95 },
+    ],
+  },
+  {
+    match: /marketing/i,
+    sources: [
+      { title: 'HubSpot AI tools', url: 'https://www.hubspot.com/products/artificial-intelligence', excerpt: 'Official HubSpot AI product overview.', score: 1 },
+      { title: 'Canva Magic Studio', url: 'https://www.canva.com/newsroom/news/magic-studio/', excerpt: 'Official Canva AI feature overview.', score: 0.95 },
+      { title: 'Adobe Firefly', url: 'https://www.adobe.com/products/firefly.html', excerpt: 'Official Adobe creative AI product page.', score: 0.95 },
+    ],
+  },
+  {
+    match: /office|productivity|workflow/i,
+    sources: [
+      { title: 'Microsoft 365 Copilot', url: 'https://www.microsoft.com/en-us/microsoft-365-copilot', excerpt: 'Official Microsoft 365 Copilot product page.', score: 1 },
+      { title: 'Google Workspace with Gemini', url: 'https://workspace.google.com/solutions/ai/', excerpt: 'Official Google Workspace AI overview.', score: 1 },
+      { title: 'Notion AI', url: 'https://www.notion.com/product/ai', excerpt: 'Official Notion AI product page.', score: 0.95 },
+    ],
+  },
+];
+
+function officialHints(query: string) {
+  return OFFICIAL_HINTS.filter((group) => group.match.test(query)).flatMap((group) => group.sources);
+}
+
 function relatedTopics(items: unknown[]): Array<{ FirstURL?: string; Text?: string }> {
   const out: Array<{ FirstURL?: string; Text?: string }> = [];
   for (const item of items) {
@@ -58,6 +97,8 @@ export class FreeResearchProvider implements ResearchProvider {
       seen.add(hit.url);
       hits.push({ ...hit, domain });
     };
+
+    for (const hint of officialHints(query)) add(hint);
 
     const tasks = [
       fetch('https://html.duckduckgo.com/html/', {
