@@ -16,6 +16,7 @@
     "db:migrate:dev": "prisma migrate dev --name init",
     "db:seed": "tsx prisma/seed/index.ts",
     "db:bootstrap": "tsx prisma/bootstrap.ts",
+    "db:predeploy": "prisma migrate deploy && tsx prisma/bootstrap.ts",
     "db:studio": "prisma studio",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test \"test/**/*.test.ts\""
