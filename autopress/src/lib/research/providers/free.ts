@@ -60,6 +60,41 @@ export class FreeResearchProvider implements ResearchProvider {
     };
 
     const tasks = [
+      fetch('https://html.duckduckgo.com/html/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'User-Agent': 'Mozilla/5.0 (compatible; AutoPressResearch/1.0)',
+          Referer: 'https://html.duckduckgo.com/',
+        },
+        body: new URLSearchParams({ q: query, kl: 'us-en' }).toString(),
+        signal: AbortSignal.timeout(12_000),
+      }).then(async (res) => {
+        if (!res.ok) return;
+        const html = await res.text();
+        const blocks = html.split(/class=["']result(?:\s|["'])/i).slice(1);
+        for (const [i, block] of blocks.entries()) {
+          const anchor =
+            block.match(/<a[^>]+class=["']result__a["'][^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i) ||
+            block.match(/<a[^>]+href=["']([^"']+)["'][^>]+class=["']result__a["'][^>]*>([\s\S]*?)<\/a>/i);
+          const snippet = block.match(/<(?:a|div)[^>]+class=["']result__snippet["'][^>]*>([\s\S]*?)<\/(?:a|div)>/i)?.[1];
+          if (!anchor?.[1] || !anchor[2] || !snippet) continue;
+          let url = clean(anchor[1]);
+          if (url.startsWith('//')) url = `https:${url}`;
+          try {
+            const redirect = new URL(url, 'https://html.duckduckgo.com/');
+            url = redirect.searchParams.get('uddg') || redirect.toString();
+          } catch {
+            continue;
+          }
+          add({
+            title: clean(anchor[2]),
+            url,
+            excerpt: clean(snippet).slice(0, 1200),
+            score: Math.max(0.65, 1 - i * 0.06),
+          });
+        }
+      }),
       fetch(
         `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&no_redirect=1&skip_disambig=1`,
         { signal: AbortSignal.timeout(12_000) },
