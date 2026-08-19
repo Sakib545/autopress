@@ -109,6 +109,9 @@ export default async function ArticleDetail({ params }: { params: Promise<{ id: 
                 </Field>
                 <Field label="Sponsor name"><Text name="sponsorName" defaultValue={article.sponsorName} /></Field>
               </div>
+              <Field label="Article body (Markdown)" hint="Saving the body resets fact-check status; run quality review again before publishing.">
+                <Area name="contentMd" defaultValue={article.contentMd} rows={24} required />
+              </Field>
               <div className="flex flex-wrap gap-6">
                 <Check name="isPinned" label="Pin to editor's picks" defaultChecked={article.isPinned} />
                 <Check name="isIndexable" label="Allow search engines to index" defaultChecked={article.isIndexable} />
