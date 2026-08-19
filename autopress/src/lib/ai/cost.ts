@@ -1,6 +1,10 @@
 /** USD per 1M tokens. Update as vendor pricing changes — surfaced in admin. */
 export const MODEL_RATES: Record<string, { input: number; output: number }> = {
   'mock-model': { input: 0, output: 0 },
+  'qwen2.5:3b': { input: 0, output: 0 },
+  'qwen2.5:7b': { input: 0, output: 0 },
+  'qwen2.5:14b': { input: 0, output: 0 },
+  'nomic-embed-text': { input: 0, output: 0 },
   'gpt-4o': { input: 2.5, output: 10 },
   'gpt-4o-mini': { input: 0.15, output: 0.6 },
   'claude-sonnet-4-6': { input: 3, output: 15 },
