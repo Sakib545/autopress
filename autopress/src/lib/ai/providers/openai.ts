@@ -3,19 +3,48 @@ import { ProviderNotConfiguredError } from '../types';
 import { estimateTokens } from '../cost';
 import { env } from '../../env';
 
+export interface OpenAICompatibleOptions {
+  id?: string;
+  baseUrl?: () => string;
+  apiKey?: () => string;
+  embeddingModel?: () => string;
+  requiresApiKey?: boolean;
+}
+
+/** OpenAI-compatible provider used for OpenAI, Ollama and LocalAI. */
 export class OpenAIProvider implements LLMProvider {
-  id = 'openai';
+  id: string;
+  private readonly options: OpenAICompatibleOptions;
+
+  constructor(options: OpenAICompatibleOptions = {}) {
+    this.options = options;
+    this.id = options.id ?? 'openai';
+  }
+
+  private baseUrl() {
+    return this.options.baseUrl?.() ?? env.openaiBaseUrl;
+  }
+
+  private apiKey() {
+    return this.options.apiKey?.() ?? env.openaiKey;
+  }
+
   isConfigured() {
-    return env.openaiKey.length > 0;
+    return this.baseUrl().length > 0 && (!this.options.requiresApiKey || this.apiKey().length > 0);
+  }
+
+  private headers() {
+    const key = this.apiKey();
+    return { 'Content-Type': 'application/json', ...(key ? { Authorization: 'Bearer ' + key } : {}) };
   }
 
   async complete(model: string, req: LLMRequest): Promise<LLMResult> {
-    if (!this.isConfigured()) throw new ProviderNotConfiguredError('openai');
+    if (!this.isConfigured()) throw new ProviderNotConfiguredError(this.id);
     const started = Date.now();
-
-    const res = await fetch(`${env.openaiBaseUrl}/chat/completions`, {
+    const res = await fetch(this.baseUrl() + '/chat/completions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.openaiKey}` },
+      headers: this.headers(),
+      signal: AbortSignal.timeout(env.aiRequestTimeoutMs),
       body: JSON.stringify({
         model,
         max_tokens: req.maxTokens ?? 4096,
@@ -27,8 +56,7 @@ export class OpenAIProvider implements LLMProvider {
         ],
       }),
     });
-
-    if (!res.ok) throw new Error(`OpenAI ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    if (!res.ok) throw new Error(this.id + ' ' + res.status + ': ' + (await res.text()).slice(0, 300));
     const data = (await res.json()) as {
       choices: { message: { content: string } }[];
       usage?: { prompt_tokens: number; completion_tokens: number };
@@ -45,13 +73,17 @@ export class OpenAIProvider implements LLMProvider {
   }
 
   async embed(text: string): Promise<number[]> {
-    if (!this.isConfigured()) throw new ProviderNotConfiguredError('openai');
-    const res = await fetch('https://api.openai.com/v1/embeddings', {
+    if (!this.isConfigured()) throw new ProviderNotConfiguredError(this.id);
+    const res = await fetch(this.baseUrl() + '/embeddings', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.openaiKey}` },
-      body: JSON.stringify({ model: 'text-embedding-3-small', input: text.slice(0, 8000) }),
+      headers: this.headers(),
+      signal: AbortSignal.timeout(env.aiRequestTimeoutMs),
+      body: JSON.stringify({
+        model: this.options.embeddingModel?.() ?? 'text-embedding-3-small',
+        input: text.slice(0, 8000),
+      }),
     });
-    if (!res.ok) throw new Error(`OpenAI embeddings ${res.status}`);
+    if (!res.ok) throw new Error(this.id + ' embeddings ' + res.status);
     const data = (await res.json()) as { data: { embedding: number[] }[] };
     return data.data[0]?.embedding ?? [];
   }
