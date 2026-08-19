@@ -5,6 +5,7 @@ import { researchSynthesisPrompt } from '../ai/prompts';
 import { getResearchProvider, credibilityFor } from '../research';
 import { safeJson } from '../utils';
 import { logError } from '../logging';
+import { env } from '../env';
 import type { FactVerdict } from '@prisma/client';
 
 type RawFact = {
@@ -17,10 +18,23 @@ type RawFact = {
   sourceIndex?: number;
 };
 
-type RawResearch = { summary?: string; facts?: RawFact[]; conflicts?: string; sufficient?: boolean };
+type RawResearch = { summary?: unknown; facts?: unknown; conflicts?: unknown; sufficient?: unknown };
 
 const VERDICTS: FactVerdict[] = ['VERIFIED', 'UNVERIFIED', 'CONFLICTING', 'OUTDATED', 'REMOVED'];
 const asVerdict = (v?: string): FactVerdict => (VERDICTS.includes(v as FactVerdict) ? (v as FactVerdict) : 'UNVERIFIED');
+
+function researchText(value: unknown, maxLength: number): string | null {
+  if (typeof value === 'string') return value.slice(0, maxLength);
+  if (Array.isArray(value)) {
+    const text = value
+      .map((item) => (typeof item === 'string' ? item : JSON.stringify(item)))
+      .filter(Boolean)
+      .join('\n');
+    return text ? text.slice(0, maxLength) : null;
+  }
+  if (value && typeof value === 'object') return JSON.stringify(value).slice(0, maxLength);
+  return null;
+}
 
 /** Builds the queries the research provider will run for a topic. */
 function queriesFor(title: string, keyword: string | null, intent: string) {
@@ -104,11 +118,12 @@ export async function buildResearch(topicId: string) {
     sources: sourceRows.map((s) => ({ title: s.title ?? s.domain, url: s.url, excerpt: s.excerpt ?? '', publishedAt: s.publishedAt?.toISOString() })),
   });
 
-  const result = await callLLM({ ...prompt, temperature: 0.2, maxTokens: 3000 });
+  const result = await callLLM({ ...prompt, temperature: 0.2, maxTokens: env.aiProvider === 'local' ? 1200 : 3000 });
   const parsed = safeJson<RawResearch>(result.text, { facts: [], sufficient: false });
 
+  const facts = Array.isArray(parsed.facts) ? (parsed.facts as RawFact[]) : [];
   let factCount = 0;
-  for (const f of parsed.facts ?? []) {
+  for (const f of facts) {
     if (!f.claim) continue;
     const src = typeof f.sourceIndex === 'number' ? sourceRows[f.sourceIndex - 1] : undefined;
     await prisma.researchFact.create({
@@ -127,12 +142,13 @@ export async function buildResearch(topicId: string) {
     factCount++;
   }
 
-  const sufficient = Boolean(parsed.sufficient) && factCount > 0 && sourceRows.length >= 2;
+  const modelMarkedSufficient = parsed.sufficient === true || parsed.sufficient === 'true';
+  const sufficient = modelMarkedSufficient && factCount > 0 && sourceRows.length >= 2;
   await prisma.research.update({
     where: { id: research.id },
     data: {
-      summary: parsed.summary?.slice(0, 8000) ?? null,
-      conflictsNoted: parsed.conflicts?.slice(0, 4000) ?? null,
+      summary: researchText(parsed.summary, 8000),
+      conflictsNoted: researchText(parsed.conflicts, 4000),
       isSufficient: sufficient,
       lastVerifiedAt: new Date(),
     },
