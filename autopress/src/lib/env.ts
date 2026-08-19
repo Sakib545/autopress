@@ -15,6 +15,17 @@ export const env = {
   nextAuthSecret: process.env.NEXTAUTH_SECRET ?? 'dev-insecure-secret-change-me',
 
   aiProvider: (process.env.AI_PROVIDER ?? 'mock').toLowerCase(),
+  aiFallbackProviders: (process.env.AI_FALLBACK_PROVIDERS ?? '')
+    .split(',')
+    .map((provider) => provider.trim().toLowerCase())
+    .filter(Boolean),
+  aiRequestTimeoutMs: clamped(process.env.AI_REQUEST_TIMEOUT_MS, 90_000, 5_000, 300_000),
+  // Ollama and LocalAI both expose the OpenAI-compatible /v1 API. In
+  // production point this at a private VPS endpoint, not a public model port.
+  localAiBaseUrl: (process.env.LOCAL_AI_BASE_URL ?? process.env.OLLAMA_BASE_URL ?? '').replace(/\/+$/, ''),
+  localAiApiKey: process.env.LOCAL_AI_API_KEY ?? '',
+  localAiEmbeddingModel: process.env.LOCAL_AI_EMBEDDING_MODEL ?? 'nomic-embed-text',
+
   openaiKey: process.env.OPENAI_API_KEY ?? '',
   anthropicKey: process.env.ANTHROPIC_API_KEY ?? '',
   googleKey: process.env.GOOGLE_AI_API_KEY ?? '',
@@ -22,9 +33,7 @@ export const env = {
   modelReview: process.env.AI_MODEL_REVIEW ?? '',
   modelCheap: process.env.AI_MODEL_CHEAP ?? '',
   modelStandard: process.env.AI_MODEL_STANDARD ?? '',
-  // Any OpenAI-compatible router (NaraRouter, OpenRouter, a self-hosted
-  // gateway) can stand in for OpenAI itself — only the base URL changes.
-  // Trailing slashes are stripped so both forms of the value work.
+  // Any OpenAI-compatible router can stand in for OpenAI itself.
   openaiBaseUrl: (process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1').replace(/\/+$/, ''),
 
   researchProvider: (process.env.RESEARCH_PROVIDER ?? 'mock').toLowerCase(),
@@ -42,13 +51,8 @@ export const env = {
   workerConcurrency: num(process.env.WORKER_CONCURRENCY, 2),
   monthlyBudgetUsd: num(process.env.MONTHLY_AI_BUDGET_USD, 50),
 
-  // MoneyPrinterTurbo — external short-form video service, reached over HTTP only.
-  // Every value here is server-side. None of it is ever sent to the browser:
-  // the admin screens receive a redacted summary from mptConfigSummary().
   mptEnabled: bool(process.env.MPT_ENABLED, false),
   mptApiUrl: (process.env.MPT_API_URL ?? 'http://127.0.0.1:8080').replace(/\/$/, ''),
-  // MPT_PUBLIC_BASE_URL is the documented name; MPT_PUBLIC_URL is kept working
-  // for installs that already set it.
   mptPublicBaseUrl: (process.env.MPT_PUBLIC_BASE_URL ?? process.env.MPT_PUBLIC_URL ?? '').replace(/\/$/, ''),
   mptApiKey: process.env.MPT_API_KEY ?? '',
   mptAutoVideo: bool(process.env.MPT_AUTO_VIDEO, true),
@@ -56,7 +60,6 @@ export const env = {
   mptSource: process.env.MPT_VIDEO_SOURCE ?? 'pexels',
   mptLanguage: process.env.MPT_VIDEO_LANGUAGE ?? 'en',
   mptVideoCount: clamped(process.env.MPT_VIDEO_COUNT, 1, 1, 5),
-  // Target narration length in seconds; drives the script word budget.
   mptVideoDuration: clamped(process.env.MPT_VIDEO_DURATION, 45, 15, 180),
   mptVideoQuality: process.env.MPT_VIDEO_QUALITY ?? '1080p',
   mptPollIntervalMs: clamped(process.env.MPT_POLL_INTERVAL_MS, 10_000, 2_000, 300_000),
@@ -73,12 +76,6 @@ export function hasVideoService() {
   return env.mptEnabled && env.mptApiUrl.length > 0;
 }
 
-/**
- * Browser-safe view of the video service configuration.
- *
- * Deliberately omits MPT_API_KEY and returns only whether the endpoint is set
- * plus its origin — never query strings, credentials, or the raw key.
- */
 export function mptConfigSummary() {
   let endpoint = '';
   try {
