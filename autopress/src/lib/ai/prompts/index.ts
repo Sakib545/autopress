@@ -106,7 +106,7 @@ Return the full corrected article in Markdown, nothing else.`,
 export function qualityReviewPrompt(s: SiteConfig, opts: { title: string; intent: string; content: string; research: string; attempt: number }) {
   return {
     task: 'QUALITY_REVIEW' as const,
-    system: `You are a hostile fact-checking editor. You are looking for reasons to reject. Be strict; inflated scores are worse than harsh ones.`,
+    system: `You are a strict but balanced fact-checking editor. Score every dimension independently from the evidence in the draft. Use 0 only when that dimension is completely absent, and 100 only for exceptional work. Do not invent problems that are not present.`,
     prompt: `Score this draft 0-100 on each dimension.
 
 Title: ${opts.title}
@@ -118,7 +118,7 @@ ${opts.research}
 Draft:
 ${opts.content}
 
-Flag every factual claim that is NOT supported by the research above. Flag any first-person testing claim. spamRisk is inverted: 0 is clean, 100 is spam.
+Flag every factual claim that is NOT supported by the research above. Flag a first-person testing claim only when the draft actually contains one. spamRisk is inverted: 0 is clean, 100 is spam. Do not give every field the same score, and do not return all zeros unless the draft is empty.
 
 Return JSON only. Every score field must be a JSON number from 0 to 100. Do not omit, rename, or nest fields:
 {"accuracy":85,"usefulness":85,"originality":80,"readability":85,"intentMatch":85,"structure":80,"seo":75,"factReliability":85,"internalLinking":70,"spamRisk":10,"weakSections":[],"feedback":"Brief editorial feedback","unverifiedClaims":[]}`,
