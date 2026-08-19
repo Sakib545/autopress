@@ -19,6 +19,11 @@ const domainFor = (url: string) => {
   }
 };
 
+const xmlValue = (block: string, tag: string) => {
+  const value = block.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'i'))?.[1] ?? '';
+  return clean(value.replace(/^<!\[CDATA\[/, '').replace(/\]\]>$/, ''));
+};
+
 function relatedTopics(items: unknown[]): Array<{ FirstURL?: string; Text?: string }> {
   const out: Array<{ FirstURL?: string; Text?: string }> = [];
   for (const item of items) {
@@ -81,6 +86,29 @@ export class FreeResearchProvider implements ResearchProvider {
             url: topic.FirstURL,
             excerpt: clean(topic.Text).slice(0, 1200),
             score: Math.max(0.5, 0.9 - i * 0.05),
+          });
+        }
+      }),
+      fetch(
+        `https://www.bing.com/search?q=${encodeURIComponent(query)}&format=rss&count=${max}&mkt=en-US`,
+        {
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AutoPressResearch/1.0)' },
+          signal: AbortSignal.timeout(12_000),
+        },
+      ).then(async (res) => {
+        if (!res.ok) return;
+        const xml = await res.text();
+        const items = xml.match(/<item>[\s\S]*?<\/item>/gi) ?? [];
+        for (const [i, item] of items.entries()) {
+          const title = xmlValue(item, 'title');
+          const url = xmlValue(item, 'link');
+          const excerpt = xmlValue(item, 'description');
+          if (!title || !url || !excerpt) continue;
+          add({
+            title,
+            url,
+            excerpt: excerpt.slice(0, 1200),
+            score: Math.max(0.65, 1 - i * 0.06),
           });
         }
       }),
