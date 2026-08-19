@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
+import { AuthError } from 'next-auth';
 import { signIn, auth } from '@/lib/auth';
 import { getSettings } from '@/lib/settings';
 import { prisma } from '@/lib/db';
@@ -19,11 +20,20 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
 
   async function login(formData: FormData) {
     'use server';
-    await signIn('credentials', {
-      email: String(formData.get('email') ?? ''),
-      password: String(formData.get('password') ?? ''),
-      redirectTo: '/admin',
-    });
+    try {
+      await signIn('credentials', {
+        email: String(formData.get('email') ?? ''),
+        password: String(formData.get('password') ?? ''),
+        redirectTo: '/admin',
+      });
+    } catch (err) {
+      // A successful sign-in throws NEXT_REDIRECT, which must travel on
+      // untouched. Only a real auth failure is turned into a message: without
+      // this the thrown CredentialsSignin reaches the client as an opaque
+      // "Application error" page instead of "Incorrect email or password".
+      if (err instanceof AuthError) redirect('/login?error=CredentialsSignin');
+      throw err;
+    }
   }
 
   return (
@@ -40,7 +50,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
 
         {userCount === 0 && (
           <p className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950/50 dark:text-amber-300">
-            No users exist yet. Run <code className="font-mono">npm run db:seed</code> to create the first admin account.
+            No users exist yet. Set <code className="font-mono">SEED_ADMIN_EMAIL</code> and <code className="font-mono">SEED_ADMIN_PASSWORD</code> and redeploy, or run <code className="font-mono">npm run db:bootstrap</code>.
           </p>
         )}
         {userCount === -1 && (
