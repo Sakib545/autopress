@@ -5,6 +5,7 @@ import { topicDiscoveryPrompt } from '../ai/prompts';
 import { checkDuplicate } from '../content/dedupe';
 import { normalizeTitle, safeJson } from '../utils';
 import { logError, notify } from '../logging';
+import { env } from '../env';
 import type { ContentType, SearchIntent } from '@prisma/client';
 
 type RawTopic = {
@@ -35,7 +36,9 @@ export function priorityFor(opts: { commercial: number; difficulty: number; inte
 
 export async function runTopicDiscovery(opts: { count?: number } = {}) {
   const settings = await getSettings();
-  const count = opts.count ?? Math.max(4, settings.articlesPerDay * 3);
+  const requestedCount = opts.count ?? Math.max(4, settings.articlesPerDay * 3);
+  const isLocalAi = env.aiProvider === 'local';
+  const count = isLocalAi ? Math.min(requestedCount, 4) : requestedCount;
 
   const [existingTopics, existingArticles, categories, published] = await Promise.all([
     prisma.topic.findMany({ select: { title: true }, orderBy: { createdAt: 'desc' }, take: 80 }),
@@ -55,7 +58,11 @@ export async function runTopicDiscovery(opts: { count?: number } = {}) {
     categories: categories.map((c) => c.name),
   });
 
-  const result = await callLLM({ ...prompt, temperature: 0.9, maxTokens: 3000 });
+  const result = await callLLM({
+    ...prompt,
+    temperature: 0.9,
+    maxTokens: isLocalAi ? 1100 : 3000,
+  });
   const raw = safeJson<RawTopic[]>(result.text, []);
   const items = Array.isArray(raw) ? raw : [];
 
