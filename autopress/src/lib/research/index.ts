@@ -3,15 +3,21 @@ import { env } from '../env';
 import { MockResearchProvider } from './providers/mock';
 import { TavilyProvider } from './providers/tavily';
 import { SerpApiProvider } from './providers/serpapi';
+import { FreeResearchProvider } from './providers/free';
 
 const providers: Record<string, ResearchProvider> = {
   mock: new MockResearchProvider(),
+  free: new FreeResearchProvider(),
   tavily: new TavilyProvider(),
   serpapi: new SerpApiProvider(),
 };
 
 export function getResearchProvider(id?: string): ResearchProvider {
-  return providers[(id ?? env.researchProvider).toLowerCase()] ?? providers.mock;
+  const requested = (id ?? env.researchProvider).toLowerCase();
+  // Synthetic fixtures are useful in development, but production should never
+  // publish citations to example domains. The free provider needs no API key.
+  if (requested === 'mock' && env.isProd) return providers.free;
+  return providers[requested] ?? providers.free;
 }
 
 export function listResearchProviders() {
