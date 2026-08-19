@@ -143,7 +143,10 @@ export async function buildResearch(topicId: string) {
   }
 
   const modelMarkedSufficient = parsed.sufficient === true || parsed.sufficient === 'true';
-  const sufficient = modelMarkedSufficient && factCount > 0 && sourceRows.length >= 2;
+  const hasEnoughEvidence = factCount > 0 && sourceRows.length >= 2;
+  // Small local models often omit or mis-shape the advisory flag. Keep the
+  // deterministic evidence gate authoritative for the free local path.
+  const sufficient = hasEnoughEvidence && (modelMarkedSufficient || env.aiProvider === 'local');
   await prisma.research.update({
     where: { id: research.id },
     data: {
