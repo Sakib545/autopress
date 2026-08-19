@@ -121,12 +121,13 @@ export async function runPublishTick() {
         const result = await prisma.$transaction(async (tx) => {
           const article = await tx.article.findUnique({
             where: { id: job.articleId as string },
-            select: { id: true, status: true, slug: true, title: true, qualityScore: true, category: { select: { slug: true } } },
+            select: { id: true, status: true, slug: true, title: true, qualityScore: true, factCheckPass: true, category: { select: { slug: true } } },
           });
           if (!article) throw new Error('Article missing');
           // Idempotency guard: only SCHEDULED or READY articles may go live.
           if (article.status !== 'SCHEDULED' && article.status !== 'READY') return null;
           if (article.qualityScore < settings.minQualityScore) throw new Error(`Quality ${article.qualityScore} below minimum ${settings.minQualityScore}`);
+          if (!article.factCheckPass) throw new Error('Article fact check is incomplete.');
 
           await tx.article.update({
             where: { id: article.id },
