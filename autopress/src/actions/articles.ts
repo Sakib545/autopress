@@ -27,7 +27,7 @@ export async function publishNowAction(formData: FormData): Promise<ActionState>
 
     const article = await prisma.article.findUnique({
       where: { id },
-      select: { id: true, slug: true, title: true, status: true, qualityScore: true, category: { select: { slug: true } } },
+      select: { id: true, slug: true, title: true, status: true, qualityScore: true, factCheckPass: true, category: { select: { slug: true } } },
     });
     if (!article) return { ok: false, message: 'Article not found.' };
     if (article.status === 'PUBLISHED') return { ok: false, message: 'Already published.' };
@@ -35,6 +35,9 @@ export async function publishNowAction(formData: FormData): Promise<ActionState>
     const force = formData.get('force') === 'true';
     if (article.qualityScore < settings.minQualityScore && !force) {
       return { ok: false, message: `Score ${article.qualityScore} is below the minimum of ${settings.minQualityScore}. Re-run review or publish with override.` };
+    }
+    if (!article.factCheckPass && !force) {
+      return { ok: false, message: 'Fact check is incomplete. Re-run review before publishing.' };
     }
 
     await prisma.$transaction([
