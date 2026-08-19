@@ -1,13 +1,13 @@
 import { prisma } from '../db';
 import { cacheDel } from '../redis';
 import { computeCostUsd } from './cost';
-import { resolveModel, resolveProvider, DISCRETIONARY_TASKS } from './router';
+import { resolveModel, resolveProvider, resolveProviderChain, DISCRETIONARY_TASKS } from './router';
 import { getBudgetState } from './budget';
 import { BudgetExceededError, type LLMRequest, type LLMResult } from './types';
 import { safeJson } from '../utils';
 
 export * from './types';
-export { resolveModel, resolveProvider, listProviders } from './router';
+export { resolveModel, resolveProvider, resolveProviderChain, listProviders } from './router';
 export { getBudgetState } from './budget';
 export { MODEL_RATES } from './cost';
 
@@ -19,8 +19,8 @@ export interface CallOptions extends LLMRequest {
 }
 
 /**
- * Single entry point for every model call. Enforces the budget, records
- * AIUsage, and never lets a caller forget cost accounting.
+ * Single entry point for model calls. It tries the configured local primary
+ * first, then only the explicit fallback providers that are configured.
  */
 export async function callLLM(opts: CallOptions): Promise<LLMResult> {
   const isDiscretionary = !opts.essential && DISCRETIONARY_TASKS.includes(opts.task);
@@ -29,33 +29,38 @@ export async function callLLM(opts: CallOptions): Promise<LLMResult> {
     if (budget.exhausted) throw new BudgetExceededError(budget.spentThisMonth, budget.budget);
   }
 
-  const provider = resolveProvider(opts.providerId);
-  const model = resolveModel(opts.task, opts.providerId ?? provider.id);
-
   let result: LLMResult | null = null;
   let error: unknown = null;
-  try {
-    result = await provider.complete(model, opts);
-  } catch (e) {
-    error = e;
+  let usedProvider = resolveProvider(opts.providerId);
+  let usedModel = resolveModel(opts.task, usedProvider.id);
+
+  for (const provider of resolveProviderChain(opts.providerId)) {
+    const model = resolveModel(opts.task, provider.id);
+    usedProvider = provider;
+    usedModel = model;
+    try {
+      result = await provider.complete(model, opts);
+      error = null;
+      break;
+    } catch (caught) {
+      error = caught;
+    }
   }
 
-  const costUsd = result ? computeCostUsd(model, result.inputTokens, result.outputTokens) : 0;
-  await prisma.aIUsage
-    .create({
-      data: {
-        articleId: opts.articleId ?? null,
-        task: opts.task,
-        provider: provider.id,
-        model,
-        inputTokens: result?.inputTokens ?? 0,
-        outputTokens: result?.outputTokens ?? 0,
-        costUsd,
-        latencyMs: result?.latencyMs ?? null,
-        succeeded: !error,
-      },
-    })
-    .catch(() => undefined);
+  const costUsd = result ? computeCostUsd(usedModel, result.inputTokens, result.outputTokens) : 0;
+  await prisma.aIUsage.create({
+    data: {
+      articleId: opts.articleId ?? null,
+      task: opts.task,
+      provider: result?.provider ?? usedProvider.id,
+      model: result?.model ?? usedModel,
+      inputTokens: result?.inputTokens ?? 0,
+      outputTokens: result?.outputTokens ?? 0,
+      costUsd,
+      latencyMs: result?.latencyMs ?? null,
+      succeeded: !error,
+    },
+  }).catch(() => undefined);
   await cacheDel('budget:state');
 
   if (error) throw error;
