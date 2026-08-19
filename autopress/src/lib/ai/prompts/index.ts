@@ -120,8 +120,8 @@ ${opts.content}
 
 Flag every factual claim that is NOT supported by the research above. Flag any first-person testing claim. spamRisk is inverted: 0 is clean, 100 is spam.
 
-Return JSON only:
-{"accuracy","usefulness","originality","readability","intentMatch","structure","seo","factReliability","internalLinking","spamRisk","weakSections":[],"feedback","unverifiedClaims":[]}`,
+Return JSON only. Every score field must be a JSON number from 0 to 100. Do not omit, rename, or nest fields:
+{"accuracy":85,"usefulness":85,"originality":80,"readability":85,"intentMatch":85,"structure":80,"seo":75,"factReliability":85,"internalLinking":70,"spamRisk":10,"weakSections":[],"feedback":"Brief editorial feedback","unverifiedClaims":[]}`,
     meta: { title: opts.title, attempt: opts.attempt },
   };
 }
