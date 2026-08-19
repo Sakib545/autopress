@@ -9,6 +9,7 @@ import { logError, notify } from '@/lib/logging';
 import { triggerVideoForPublishedArticle } from '@/lib/pipeline/publish';
 import { scheduleArticle, refreshArticle, reviewArticle, rewriteArticle, generateSeo, buildFinalHtml, assignFeaturedImage } from '@/lib/pipeline';
 import { revalidateArticle } from '@/lib/revalidate';
+import { countWords, readingTimeMinutes } from '@/lib/utils';
 import type { ActionState } from './topics';
 
 const idSchema = z.object({ id: z.string().min(1) });
@@ -161,6 +162,7 @@ const editSchema = z.object({
   isIndexable: z.boolean(),
   sponsorship: z.enum(['NONE', 'SPONSORED', 'PAID_PARTNERSHIP', 'ADVERTISEMENT']),
   sponsorName: z.string().max(120).nullable(),
+  contentMd: z.string().min(200).max(50000),
 });
 
 export async function updateArticleAction(formData: FormData): Promise<ActionState> {
@@ -177,15 +179,42 @@ export async function updateArticleAction(formData: FormData): Promise<ActionSta
       isIndexable: formData.get('isIndexable') === 'on',
       sponsorship: formData.get('sponsorship') || 'NONE',
       sponsorName: formData.get('sponsorName') ? String(formData.get('sponsorName')) : null,
+      contentMd: String(formData.get('contentMd') ?? ''),
     });
     if (!parsed.success) return { ok: false, message: parsed.error.issues[0]?.message ?? 'Invalid input.' };
 
-    const { id, ...data } = parsed.data;
-    const article = await prisma.article.update({
-      where: { id },
-      data: { ...data, updatedContentAt: new Date() },
-      select: { slug: true, category: { select: { slug: true } } },
-    });
+    const { id, contentMd, ...data } = parsed.data;
+    const current = await prisma.article.findUnique({ where: { id }, select: { contentMd: true } });
+    if (!current) return { ok: false, message: 'Article not found.' };
+    const words = countWords(contentMd);
+    const latest = await prisma.articleRevision.aggregate({ where: { articleId: id }, _max: { version: true } });
+    const [article] = await prisma.$transaction([
+      prisma.article.update({
+        where: { id },
+        data: {
+          ...data,
+          contentMd,
+          contentHtml: null,
+          wordCount: words,
+          readingTime: readingTimeMinutes(words),
+          status: 'MANUAL_REVIEW',
+          factCheckPass: false,
+          qualityScore: null,
+          updatedContentAt: new Date(),
+        },
+        select: { slug: true, category: { select: { slug: true } } },
+      }),
+      prisma.articleRevision.create({
+        data: {
+          articleId: id,
+          version: (latest._max.version ?? 0) + 1,
+          reason: 'MANUAL_EDIT',
+          summary: 'Body edited from the admin dashboard.',
+          contentBefore: current.contentMd,
+          contentAfter: contentMd,
+        },
+      }),
+    ]);
     await flushArticle(article.category?.slug, article.slug);
     revalidatePath(`/admin/articles/${id}`);
     return { ok: true, message: 'Saved.' };
